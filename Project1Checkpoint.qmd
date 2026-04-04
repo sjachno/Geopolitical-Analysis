@@ -20,3 +20,7 @@ Source: https://link.springer.com/article/10.1007/s11558-019-09345-1
 
 2. Are higher education levels more prominent in democratic countries?
 
+**Visualizations**
+![Suffrage Restrictions](Suff_Res.png)
+![Fair and Free Elections](Num_FFElec.png)
+
