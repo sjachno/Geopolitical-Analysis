@@ -1,0 +1,11 @@
+---
+title: "Project 1 Checkpoint"
+author: "Sofia Jachno"
+format: html
+---
+**Data Context and Cleaning**
+The Democracy-Dictatorship dataset was put together to conduct research on political transitions. It's purpose is to collect information on regime characteristics, specifically focusing on regime change and political transitions. The complete data set consists of 9159 total observations. 
+
+The dataset was updated from the original to include information up to the year 2025. Additionally, 3 more countries and 16 self-governing territories were added into the dataset. Finally, many of the logical variables were renamed. For example, is_colony and is_communist were renamed to colony and communist respectively.  
+
+
