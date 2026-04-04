@@ -8,4 +8,15 @@ The Democracy-Dictatorship dataset was put together to conduct research on polit
 
 The dataset was updated from the original to include information up to the year 2025. Additionally, 3 more countries and 16 self-governing territories were added into the dataset. Finally, many of the logical variables were renamed. For example, is_colony and is_communist were renamed to colony and communist respectively.  
 
+Source: https://link.springer.com/article/10.1007/s11558-019-09345-1
+
+**Questions to Address With These Data**
+1. What is the relationship between suffrage restrictions and whether the country is a democracy or not?
+
+2. Has the number of countries with fair and free elections increase from 1950 to 2025?
+
+**Questions to Address With Supplemental Data**
+1. How does income inequality influence whether a country is a democracy or not?
+
+2. Are higher education levels more prominent in democratic countries?
 
