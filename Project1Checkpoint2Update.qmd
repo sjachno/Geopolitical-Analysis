@@ -135,9 +135,7 @@ We can add any variable from the dataset as a grouping variable. For example, we
 
 ```{r}
 summarise_leadership_gender_gap("is_democracy")
-summarise_leadership_gender_gap("has_free_and_fair_election")
 ```
-
 The proportion of female presidents is higher for democratic countries than non-democratic countries. The proportions of male presidents are similar across democratic and non-democratic countries, but the proportion of male presidents for democratic countries is slightly lower. Non-democratic countries’ female presidents are, on average, about 13.7 years older than male presidents. For democratic countries, that difference is much lower, at 2.81 years.
 
 The proportion of male monarchs in non-democratic countries is 84.1 percentage points higher than that of female monarchs. However, in democratic countries, the proportions of male and female monarchs are very similar (47.8% and 52.2%, respectively). Monarchs of both gender are much younger on average than presidents, around 30-35 years old. Non-democratic countries seem to have younger monarchs than democratic countries.
