@@ -160,8 +160,8 @@ lgl (17): is_monarchy, is_commonwealth, is_female_monarch, is_democracy, is_...
 ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
 </div>
 </div>
-<section id="new-data-from-world-bank-api-source" class="level2">
-<h2 class="anchored" data-anchor-id="new-data-from-world-bank-api-source">New Data from World Bank (API SOURCE)</h2>
+<section id="new-data-from-world-bank" class="level2">
+<h2 class="anchored" data-anchor-id="new-data-from-world-bank">New Data from World Bank</h2>
 <p>The World Bank’s SDG database is a subset of its broader World Development Indicators, organized specifically around the UN’s 17 Sustainable Development Goals. It provides country-year panel data (typically yearly) covering economic, social, environmental, and institutional statistics aligned with each goal. The SDGs are separated by topic (e.g., poverty, education, gender equality).</p>
 <p>The proportion of women in national parliaments variable is under the 5th SDG. The 5th SDG is “Achieve gender equality and empower all women and girls.” This variable measures the percentage of seats held by women in a country’s national parliament, typically focusing on the lower or single legislative chamber. It is reported annually and serves as an indicator of gender equality in politics.</p>
 <p>This proportion is available for most countries from 1997-2020. There are missing values for certain years and countries, but the proportion is more available during the later years of that range.</p>
@@ -211,13 +211,13 @@ lgl (17): is_monarchy, is_commonwealth, is_female_monarch, is_democracy, is_...
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(country) <span class="sc">|&gt;</span> </span>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">map</span>(get_gdp) <span class="sc">|&gt;</span> </span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_rows</span>() <span class="sc">|&gt;</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(year <span class="sc">&lt;=</span> <span class="dv">2025</span>)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(year <span class="sc">&lt;=</span> <span class="dv">2020</span>)</span>
 <span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="fu">write_csv</span>(gdp_data, <span class="st">"gdp_data.csv"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>gdp_data <span class="ot">&lt;-</span> readr<span class="sc">::</span><span class="fu">read_csv</span>(<span class="st">"gdp_data.csv"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>Rows: 8151 Columns: 3
+<pre><code>Rows: 7210 Columns: 3
 ── Column specification ────────────────────────────────────────────────────────
 Delimiter: ","
 chr (1): country
@@ -230,8 +230,8 @@ dbl (2): year, gdp_nominal
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(gdp_data, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">"country"</span>, <span class="st">"year"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
-<section id="data-cleaning-for-womenpar-source-webscraping" class="level2">
-<h2 class="anchored" data-anchor-id="data-cleaning-for-womenpar-source-webscraping">Data Cleaning for WomenPar Source (Webscraping)</h2>
+<section id="data-cleaning-for-womenpar-source" class="level2">
+<h2 class="anchored" data-anchor-id="data-cleaning-for-womenpar-source">Data Cleaning for WomenPar Source</h2>
 <p>Below, we read in the data and do some data cleaning. We removed some columns because certain years had no data for any countries, and there was an empty column that was created from downloading the data. Lastly, we renamed the country column.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>womenPar0 <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(<span class="st">"womenPar.xlsx"</span>, <span class="at">skip=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -419,6 +419,8 @@ mean in group FALSE  mean in group TRUE
 </div>
 </div>
 <p>Since this confidence interval does NOT include zero, we can conclude that we have more support that the null hypothesis is true- the true difference in means between democratic and non democratic countries is not significant. Our p-value is about 4.5, and our t-value is about -4.59, which are pretty high above the standard alpha level of 0.05.</p>
+<p>Since the confidence interval does not include zero, we reject the null hypothesis and conclude that there is a statistically significant difference in the mean proportion of seats held by women between democratic and non-democratic countries. This suggests that the true difference in means is not zero.</p>
+<p>The t-statistic is approximately −4.59, and the p-value is very small, so it is less than a standard significance level of 0.05. This provides strong evidence against the null hypothesis and supports the conclusion that the difference in means is statistically significant.</p>
 </section>
 </section>
 
