@@ -1,0 +1,216 @@
+---
+title: "Step 3 Project 1"
+format: html
+editor: visual
+---
+
+# Step 3 Project 1- API & Webscraping
+
+Loading in the Libraries:
+
+```{r}
+library(httr)
+library(tidyjson)
+library(jsonlite)
+library(tidyverse)
+library(glue)
+library(readxl)
+library(countrycode)
+```
+
+Reading in the data:
+
+```{r}
+democracy_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2024/2024-11-05/democracy_data.csv')
+```
+
+## New Data from World Bank (API SOURCE)
+
+The World Bank’s SDG database is a subset of its broader World Development Indicators, organized specifically around the UN’s 17 Sustainable Development Goals. It provides country-year panel data (typically yearly) covering economic, social, environmental, and institutional statistics aligned with each goal. The SDGs are separated by topic (e.g., poverty, education, gender equality).
+
+The proportion of women in national parliaments variable is under the 5th SDG. The 5th SDG is "Achieve gender equality and empower all women and girls." This variable measures the percentage of seats held by women in a country's national parliament, typically focusing on the lower or single legislative chamber. It is reported annually and serves as an indicator of gender equality in politics.
+
+This proportion is available for most countries from 1997-2020. There are missing values for certain years and countries, but the proportion is more available during the later years of that range.
+
+## Links
+
+-   [SDG 5 description](https://sdgs.un.org/goals/goal5)
+-   [Where we found the data](https://databank.worldbank.org/source/sustainable-development-goals-(sdgs)#)
+-   [Variable description from World Bank](https://databank.worldbank.org/metadataglossary/world-development-indicators/series/SG.GEN.PARL.ZS)
+
+## New Data from Demographics and Financial Data API 
+
+The GDP API provides information on past and current GDP information for countries around the world. The GDP API offers a wide variety of GDP data per country, such as the GDP growth rate as a percentage, GDP at purchasing power parity, and nominal GDP. However, for this project, we only decided to focus on the nominal GDP variable, called gdp_nominal. This variable is measured in billions of US dollars. We also extracted the country variable, which is stored as a 3 letter country code, and the year. It is important to keep in mind that the API did not provide the nominal GDP for every country and/or for every year. The gdp_nominal variable also stored the predicted nominal GDP for future years, so we had to clean the data to remove years beyond 2025. 
+
+```{r}
+#| echo: false
+my_key <- "7TVyFijcy66EO020oIG7u8OZUg6BNxNAIh742OU8"
+```
+
+```{r}
+#| eval: true
+get_gdp <- function(country, key = my_key)
+  {
+  url <- glue("https://api.api-ninjas.com/v1/gdp?country={country};X-Api-Key={key}")
+  my_data <- safely(fromJSON)(url)
+
+  result <- my_data$result
+
+  if (is.null(result) || length(result$year) == 0) {
+    return(NULL)
+  } else {
+    return(
+      data.frame(
+        country = country,
+        year = my_data$result$year,
+        gdp_nominal = my_data$result$gdp_nominal
+      )
+    )
+  }
+}
+```
+
+```{r}
+#Data cleaning: Renaming country_code column to just country to make it easier to join the datasets
+#| eval: false
+democracy_data <- democracy_data |>
+  rename(country = country_code) 
+```
+
+```{r}
+#| eval: false
+#(Run this in console)
+gdp_data <- democracy_data |> 
+  distinct(country) |>
+  pull(country) |> 
+  map(get_gdp) |> 
+  bind_rows() |>
+  filter(year <= 2025)
+write_csv(gdp_data, "gdp_data.csv")
+```
+
+```{r}
+gdp_data <- readr::read_csv("gdp_data.csv")
+democracy_data <- democracy_data |>
+  left_join(gdp_data, by = c("country", "year"))
+```
+
+## Data Cleaning for WomenPar Source (Webscraping)
+
+Below, we read in the data and do some data cleaning. We removed some columns because certain years had no data for any countries, and there was an empty column that was created from downloading the data. Lastly, we renamed the country column.
+
+```{r}
+womenPar0 <- read_excel("womenPar.xlsx", skip=2)
+womenPar0 <- womenPar0 %>%
+  select(-2:-8, -11) %>% # removing columns with no data and empty column
+  rename(country_name = ...1) # renaming the country column
+womenPar0
+```
+
+This data frame is in a wide format, so we used pivot_longer() to pivot the data into long format to match our democracy_data.
+
+```{r}
+womenPar <- womenPar0 %>%
+  pivot_longer(cols = -country_name, # keep country column the same
+    names_to = "year", # creating new column for years
+    values_to = "prop_in_par") # creating new column for the proportion data
+womenPar
+```
+
+## Joining the womenPar data
+
+Changing the data from the womenPar data to have years and proprotion in parliament be numeric, and change the na values to be repalced with na instead of "..". 
+
+The package countrycode can take in a vector, such as a column from our data frame in womenPar, and convert it to an iso3c, which is a country code. By adding that column, we are able to achieve a join much easier.
+
+In addition, some countries had to be removed from our final mega dataset due to missing ties to countrycodes from this package. Some of these include general areas that our womenPar data had due to the layout of the data format (such as in general Northern America), which we wouldn't have needed anyways since they doubly count data. Other countries that couldn't be included didn't seem to be big players to our conclusions, but it is an important note to make.
+
+```{r}
+womenPar <- womenPar |>
+  mutate(
+    year = as.numeric(year),
+    prop_in_par = na_if(prop_in_par, ".."),
+    prop_in_par = as.numeric(prop_in_par),
+    iso3c = countrycode(country_name, "country.name", "iso3c")
+  )
+
+#making the year numeric too, and then changing the countrycode column to be called iso3c to match our womenPar data.
+democracy_data <- democracy_data |>
+  mutate(
+    year = as.numeric(year),
+    iso3c = countrycode(country_name, "country.name", "iso3c")
+  )
+#using a left join to join all our data sets together, since the GDP one is already included. We are joining by the code and the year, since each year is what is every row, and the code is the country recognition.  
+democracy_data <- democracy_data |>
+  left_join(womenPar |> select(iso3c, year, prop_in_par),
+            by = c("iso3c", "year"))
+
+```
+
+```{r}
+
+democracy_data |>
+  filter(!is.na(gdp_nominal), !is.na(is_democracy)) |>
+  group_by(is_democracy) |>
+  summarise(
+    mean_gdp = round(mean(gdp_nominal, na.rm = TRUE), 2),
+    median_gdp = round(median(gdp_nominal, na.rm = TRUE), 2),
+    min_gdp = round(min(gdp_nominal, na.rm = TRUE), 2),
+    max_gdp = round(max(gdp_nominal, na.rm = TRUE), 2),
+    sd_gdp = round(sd(gdp_nominal, na.rm = TRUE), 2),
+    n = n()
+  )
+```
+
+Democratic countries tend to have higher GDP levels than non-democratic countries. The mean GDP for democracies (362) is much larger than that of non-democracies (106), and the median is also higher (23.3 vs. 11.4). The large differences in mean and median GDPs between the two groups suggest that democracies tend to perform better economically. However, both groups show substantial variability, with large standard deviations and very high maximum values, indicating the presence of some extreme cases.
+
+```{r}
+democracy_data %>%
+  filter(!is.na(is_democracy)) %>%
+  mutate(is_democracy = factor(is_democracy, labels = c("No", "Yes"))) %>%
+  ggplot(aes(x = is_democracy, y = prop_in_par)) +
+  geom_boxplot(fill = "lightblue", color = "blue", outlier.color = "blue") +
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    color = "blue",
+    size = 1.5) +
+  stat_summary(
+    fun = mean,
+    geom = "text",
+    aes(label = paste0("Mean: ", round(after_stat(y), 1),"%")),
+    vjust = -1,
+    color = "black") +
+  stat_summary(
+    fun = median,
+    geom = "point",
+    color = "blue",
+    size = 1.5) +
+  stat_summary(
+    fun = median,
+    geom = "text",
+    aes(label = paste0("Median: ", round(after_stat(y), 1),"%")),
+    vjust = 1.5,
+    color = "black") +
+  labs(
+    title = "Women’s Representation in National Parliament by Democracy Status",
+    x = "Democracy Status",
+    y = "Percentage of National Parliament Seats Held by Women") + 
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  theme_minimal()
+```
+
+Democracies tend to have slightly higher representation of women in national parliaments compared to non-democracies. The median percentage is higher for democracies (15.8%) than for non-democracies (14%), and the mean is also somewhat higher (17.7% vs. 16%).
+
+However, the distributions are fairly similar overall, with substantial overlap between the two groups’ boxplots. Both democracies and non-democracies show wide variability and several outliers. Non-democratic countries seem to have more outliers, including some at higher values, with two outliers exceeding 60%.
+
+As another test, let us check whether these results are statistically significant.
+
+```{r}
+#We can run a simple t test to compare the means of the results, seeing whether this difference is statistically significant.
+t.test(prop_in_par ~ is_democracy, data = democracy_data)
+```
+
+Since this confidence interval does NOT include zero, we can conclude that we have more support that the null hypothesis is true- the true difference in means between democratic and non democratic countries is not significant. Our p-value is about 4.5, and our t-value is about -4.59, which are pretty high above the standard alpha level of 0.05.
+
+
