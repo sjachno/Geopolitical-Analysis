@@ -1,0 +1,284 @@
+---
+title: "Project 1 Checkpoint 4"
+author: "Julia Aptekar, Bryce Corbett, Meghana Kolar, Sofia Jachno"
+format: html
+embedded-resources: true
+code-fold: true
+theme: lux
+---
+
+```{r}
+#|echo: false
+library(tidyverse)
+library(wesanderson)
+library(gt)
+library(broom)
+```
+
+
+## Exploring our Data
+
+The dataset used in this study was put together to conduct research on political transitions for countries around the world. It's purpose is to collect information on regime characteristics, specifically focusing on how a country's political system changes throughout the years. The dataset consists of 14,768 observations and 43 variables. Each row represents political information for one country on a given year, ranging from 1950 to 2020. The variables provide information on whether a country is democratic, its regime type, and information on elections, leaders, suffrage, power changes, and colonial history. 
+
+Link to original dataset: https://www.christianbjoernskov.com/bjoernskovrodedata/
+
+```{r}
+#|echo: false
+democracy_data <- read.csv("Combined_Democracy_Data.csv")
+```
+
+## How does women's representation in the national parliament change while accounting for the democracy status of the country?
+
+```{r}
+#| echo: false
+democracy_data <- democracy_data |>
+  mutate(
+    president_age_at_accession = president_accesion_year - president_birthyear,
+    monarch_age_at_accession = monarch_accession_year - monarch_birthyear,
+    has_female_leader = ifelse(is_female_president | is_female_monarch, 1, 0),
+    decade = ifelse(year < 1960, "1950-1959",
+       ifelse(year < 1970, "1960-1969",
+       ifelse(year < 1980, "1970-1979",
+       ifelse(year < 1990, "1980-1989",
+       ifelse(year < 2000, "1990-1999",
+       ifelse(year < 2010, "2000-2009",
+                           "2010-2020")))))))
+
+summarise_leadership_gender_gap <- function(group_var) {
+  democracy_data |> 
+    filter(!is.na(democracy_data[[group_var]])) |>
+    # grouping data by specified grouping variable
+    group_by(across(all_of(group_var))) |>
+    summarise(n = n(),
+              # calculating proportions of female and male presidents
+              prop_female_president = mean(
+                ifelse(!is_monarchy, is_female_president, NA), na.rm = TRUE),
+              prop_male_president = mean(
+                ifelse(!is_monarchy, !is_female_president, NA), na.rm = TRUE),
+              # calculating difference in proportions of male presidents and female presidents (male - female)
+              gap_president_prop = prop_male_president - prop_female_president,
+              # calculating the average accession ages for female and male presidents
+              avg_accession_age_female_president = mean(
+                president_age_at_accession[is_presidential & is_female_president], na.rm = TRUE),
+              avg_accession_age_male_president = mean(
+                president_age_at_accession[is_presidential & !is_female_president], na.rm = TRUE),
+              # calculating difference in average accession ages of male and female presidents (male - female)
+              gap_president_accession_age = avg_accession_age_male_president - avg_accession_age_female_president,
+              
+              # calculating proportions of female and male monarchs
+              prop_female_monarch = mean(
+                ifelse(is_monarchy, is_female_monarch, NA), na.rm = TRUE),
+              prop_male_monarch = mean(
+                ifelse(is_monarchy, !is_female_monarch, NA), na.rm = TRUE),
+              # calculating difference in proportions of male monarchs and female monarchs (male - female)
+              gap_monarch_prop = prop_male_monarch - prop_female_monarch,
+              # calculating the average accession ages for female and male monarchs
+              avg_accession_age_female_monarch = mean(
+                monarch_age_at_accession[is_monarchy & is_female_monarch], na.rm = TRUE),
+              avg_accession_age_male_monarch = mean(
+                monarch_age_at_accession[is_monarchy & !is_female_monarch], na.rm = TRUE),
+              # calculating difference in average accession ages of male and female monarchs (male - female)
+              gap_monarch_accession_age =
+                avg_accession_age_male_monarch - avg_accession_age_female_monarch,
+              .groups = "drop")
+}
+```
+
+
+```{r}
+#|echo: false
+plotMe <- summarise_leadership_gender_gap("year")
+```
+
+We created a ribbon plot to highlight the differences in age between average accession ages of presidents and monarchs, by gender. We omitted years before 1980, as there were no female presidents before then, so we did not have any values for the average female presidents' accession age.
+
+```{r}
+#| echo: false
+#| fig-alt: This is a ribbon plot, depicting the differences in average accession ages of presidents and monarchs by gender. There are four lines on the graph, one for each gender and leader type combination. The x-axis is years 1980-2020, and the y-axis shows ages 20-70. 
+
+moonrise3 <- wes_palette("Moonrise3")
+
+plotMe %>%
+  filter(year >= 1980) %>%
+  ggplot(aes(x = year)) +
+  geom_ribbon(data = plotMe, aes(x = year,
+                                 ymin = avg_accession_age_female_president,
+                                 ymax = avg_accession_age_male_president),
+              fill = "lightgray", alpha = 0.5) +
+  geom_ribbon(data = plotMe,
+              mapping = aes(x = year,
+                            ymin = avg_accession_age_female_monarch,
+                            ymax = avg_accession_age_male_monarch),
+              fill = "lightgray", alpha = 0.5) +
+  geom_line(aes(y = avg_accession_age_female_president, color = "Female President"), linewidth = 1.5) +
+  geom_line(aes(y = avg_accession_age_male_president,   color = "Male President"),   linewidth = 1.5) +
+  geom_line(aes(y = avg_accession_age_female_monarch,   color = "Female Monarch"),   linewidth = 1.5) +
+  geom_line(aes(y = avg_accession_age_male_monarch,     color = "Male Monarch"),     linewidth = 1.5) +
+  scale_color_manual(
+    name = "Leader Type",
+    values = c(
+      "Female President" = moonrise3[3],
+      "Male President"   = moonrise3[2],
+      "Male Monarch"     = moonrise3[4],
+      "Female Monarch"   = moonrise3[1]),
+    breaks = c("Female President", "Male President", "Male Monarch", "Female Monarch")) +
+  scale_x_continuous(limits = c(1980, 2020)) +
+  scale_y_continuous(limits = c(20, 70)) +
+  labs(title = "Average Accession Ages of Presidents & Monarchs by Gender",
+    x     = "Year",
+    y     = "Average Accession Age") +
+  theme_minimal()
+```
+
+From 1980 to 2020, gender differences in the age at which leaders take office vary between presidents and monarchs. Among presidents, the gap is small and relatively stable, with men only slightly older than women at the time they take office. Both groups also show a gradual increase in age over time, suggesting that gender plays little role in when presidents begin their terms.
+In contrast, monarchs show a much larger and growing gap. Male monarchs tend to take the throne at older ages, while female monarchs are generally younger, with their ages even decreasing in more recent years.
+Overall, gender disparities in age at taking office are minimal in elected systems but much more pronounced in monarchical ones, where succession patterns create stronger divides.
+
+
+## Adding More Information
+
+To explore our research questions further, we added more variables to our original dataset. We wanted to identify the nominal GDP (measured in US dollars) and the proportion of women in parliament for each country and year. From this https://api-ninjas.com/api/gdp API, we extracted the nominal GDP of each country and added it into our dataset. We also gathered the proportion of women in parliament from this source https://databank.worldbank.org/source/sustainable-development-goals-(sdgs)#. 
+
+## How does women's representation in national parliament change based on the democracy status of the country?
+
+```{r}
+#| echo: false
+#| fig-alt: This is a boxplot depicting the proportion of women in parliament, while faceting on the democracy status of the country. The mean proportion of women holding seats in non-democratic countries is 0.16 and 0.177 for democratic countries. The median proportion of women holding seats in non-democratic countries is 0.14 and 0.158 for democratic countries.
+
+pal <- wes_palette("Moonrise3", n = 2)  
+
+democracy_data %>%
+  filter(!is.na(is_democracy)) %>%
+  filter(!is.na(prop_in_par)) %>%
+  mutate(is_democracy = factor(is_democracy, labels = c("No", "Yes"))) %>%
+  ggplot(aes(x = is_democracy, y = prop_in_par)) +
+  theme(text = element_text(size = 11, family = "serif")) +
+  geom_boxplot(fill = pal,              
+    color = "black",          
+    outlier.color = "black") +
+  stat_summary(fun = mean,
+    geom = "crossbar",
+    color = "black",
+    width = 0.75,
+    linetype = "dotted",
+    size = .2) +
+  stat_summary(fun = mean,
+    geom = "text",
+    aes(label = paste0("Mean: ", round(after_stat(y), 1),"%")),
+    vjust = -1,
+    color = "black") +
+  stat_summary(fun = median,
+    geom = "text",
+    aes(label = paste0("Median: ", round(after_stat(y), 1),"%")),
+    vjust = 1.5,
+    color = "black") +
+  labs(title = "Women's Representation in National Parliament by Democracy Status",
+    x = "Democracy Status",
+    y = "National Parliament Seats Held by Women (%)") + 
+  theme(plot.title = element_text(size = 5),
+    axis.title = element_text(size = 5)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  theme_minimal()
+```
+
+Democracies tend to have slightly higher representation of women in national parliaments compared to non-democracies. The median percentage is higher for democracies (15.8%) than for non-democracies (14%), and the mean is also somewhat higher (17.7% vs. 16%).
+
+However, the distributions are fairly similar overall, with substantial overlap between the two groups’ boxplots. Both democracies and non-democracies show wide variability and several outliers. Non-democratic countries seem to have more outliers, including some at higher values, with two outliers exceeding 60%.
+
+## Does the introduction of full suffrage correspond to increases in nominal GDP?
+
+```{r}
+#| echo: false
+#Finding the first year where a country granted full suffrage
+suffrage_lookup <- democracy_data |>
+  filter(has_full_suffrage == TRUE) |>
+  group_by(country) |>
+  summarize(suffrage_year = min(year), .groups = "drop")
+
+democracy_data <- democracy_data |>
+  left_join(suffrage_lookup, by = "country")
+```
+
+```{r}
+#| echo: false
+#| fig-alt: The plot below depicts 10 years before a country granted full suffrage, and 10 years after a country granted full suffrage, with 0 representing the year full suffrage began. Year is on the x-axis, and the y-axis is the mean nominal GDP for all countries (measured in US dollars).
+
+democracy_data <- democracy_data |>
+  mutate(event_time = year - suffrage_year)
+
+event_data <- democracy_data |>
+  filter(!is.na(event_time)) |>
+  filter(event_time >= -10 & event_time <= 10) |>
+  group_by(event_time) |>
+  summarize(mean_gdp = mean(gdp_nominal, na.rm = TRUE),
+            .groups = "drop")
+
+ggplot(event_data, aes(x = event_time, y = mean_gdp)) +
+  geom_line(color = moonrise3[2], linewidth = 1.2) +
+  geom_ribbon(aes(ymin = mean_gdp,
+                  ymax = mean_gdp),
+              alpha = 0.2, fill =  moonrise3[2]) +
+  geom_vline(xintercept = 0, color = moonrise3[1], linetype = "dashed") +
+  scale_y_log10() +
+  labs(
+    title = "Nominal GDP Around the Introduction of Full Suffrage",
+    x = "Years Relative to Suffrage",
+    y = "Average Nominal GDP (log scale)") +
+  theme_minimal()
+```
+
+From the graph above, we cannot conclude that the introduction full suffrage leads to a higher nominal GDP. Nominal GDP does seem to be on the rise across countries, however that holds true regardless of whether a country has full suffrage or not. From this graph alone, we cannot determine that the introduction of full suffrage leads to a higher nominal GDP. There are most likely other factors that contribute to a higher nominal GDP. 
+
+##Running a t-test
+
+We ran a t-test to compare the means of the proportion of national parliament seats held by women between different democracy statuses.
+
+```{r}
+#|echo: false
+result <- t.test(prop_in_par ~ is_democracy, data = democracy_data)
+table_result <- tidy(result)
+
+table_result |>
+  select(estimate1, estimate2, statistic, p.value, conf.low, conf.high, parameter) |>
+  gt() |>
+  tab_header(
+    title    = md("**Proportion in Parliament by Democracy Status**"),
+    subtitle = "Welch Two-Sample t-Test") |>
+  cols_label(estimate1  = md("Mean<br>(Non-Democracy)"),
+    estimate2 = md("Mean<br>(Democracy)"),
+    statistic = md("*t*-statistic"),
+    p.value = md("*p*-value"),
+    conf.low = "95% CI Low",
+    conf.high = "95% CI High",
+    parameter = md("*df*")) |>
+  fmt_number(columns  = c(estimate1, estimate2, statistic, conf.low, conf.high),
+    decimals = 3) |>
+  fmt_number(columns  = parameter,
+    decimals = 1) |>
+  fmt_scientific(columns  = p.value,
+    decimals = 3) |>
+  tab_style(style = cell_fill(color = "#fff3cd"),
+    locations = cells_body(columns = p.value)) |>
+  tab_style(style = cell_text(weight = "bold"),
+    locations = cells_body(columns = p.value)) |>
+  tab_spanner(label = "Group Means",
+    columns = c(estimate1, estimate2)) |>
+  tab_spanner(label = "Confidence Interval",
+    columns = c(conf.low, conf.high)) |>
+  tab_footnote(footnote = "Highlighted cell indicates a statistically significant result.",
+    locations = cells_column_labels(columns = p.value)) |>
+  opt_stylize(style = 6, color = "blue") |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+The t-statistic is -4.591 and the p-value is very small. Also, the confidence interval does not include zero, so we reject the null hypothesis and conclude that there is a statistically significant difference in the mean proportion of seats held by women between democratic and non-democratic countries. This suggests that the true difference in means is not zero.
+
+
+`
+
+
+
+
+
+
+
