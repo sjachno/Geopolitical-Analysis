@@ -1,0 +1,746 @@
+---
+title: "Democracy & Gender in Leadership"
+format:
+  dashboard:
+    orientation: columns
+    theme: flatly
+    embed-resources: true
+    css: dashboard-styles.css
+    logo: logo.png
+    logo-alt: "Democracy and Gender in Leadership project logo."
+nav-buttons:
+  - icon: github
+    href: https://github.com/sjachno
+    aria-label: GitHub
+  - icon: linkedin
+    href: https://www.linkedin.com/in/sofia-jachno-2b26b0365/
+    aria-label: LinkedIn
+  - icon: instagram
+    href: https://www.instagram.com/sofia.jchn/
+    aria-label: Instagram
+  - icon: envelope
+    href: mailto:sjachno@calpoly.edu
+    aria-label: Email
+---
+
+```{r}
+options(pillar.width = Inf)
+
+library(tidyverse)
+library(wesanderson)
+library(gt)
+library(broom)
+
+democracy_data <- read.csv("Combined_Democracy_Data.csv")
+
+blue_dark   <- "#5b8db8"
+blue_mid    <- "#89afd4"
+blue_light  <- "#bdd4e7"
+blue_pale   <- "#ddeaf5"
+pink_accent <- "#e8a0b0"
+pink_pale   <- "#f5d5dc"
+black       <- "#000000"
+white       <- "#FFFFFF"
+
+pal <- wes_palette("Moonrise3", n = 5)
+
+theme_set(theme_minimal(base_size = 13, base_family = "Georgia"))
+
+democracy_data <- democracy_data |>
+  mutate(
+    president_age_at_accession = president_accesion_year - president_birthyear,
+    monarch_age_at_accession   = monarch_accession_year  - monarch_birthyear,
+    has_female_leader = ifelse(is_female_president | is_female_monarch, 1, 0),
+    decade = case_when(
+      year < 1960 ~ "1950-1959",
+      year < 1970 ~ "1960-1969",
+      year < 1980 ~ "1970-1979",
+      year < 1990 ~ "1980-1989",
+      year < 2000 ~ "1990-1999",
+      year < 2010 ~ "2000-2009",
+      TRUE        ~ "2010-2020"
+    )
+  )
+
+summarise_leadership_gender_gap <- function(group_var) {
+  democracy_data |>
+    filter(!is.na(.data[[group_var]])) |>
+    group_by(across(all_of(group_var))) |>
+    summarise(
+      n = n(),
+      prop_female_president = mean(ifelse(!is_monarchy, is_female_president, NA), na.rm = TRUE),
+      prop_male_president   = mean(ifelse(!is_monarchy, !is_female_president, NA), na.rm = TRUE),
+      gap_president_prop    = prop_male_president - prop_female_president,
+      avg_accession_age_female_president = mean(
+        president_age_at_accession[is_presidential & is_female_president], na.rm = TRUE),
+      avg_accession_age_male_president = mean(
+        president_age_at_accession[is_presidential & !is_female_president], na.rm = TRUE),
+      gap_president_accession_age = avg_accession_age_male_president - avg_accession_age_female_president,
+      prop_female_monarch = mean(ifelse(is_monarchy, is_female_monarch, NA), na.rm = TRUE),
+      prop_male_monarch   = mean(ifelse(is_monarchy, !is_female_monarch, NA), na.rm = TRUE),
+      gap_monarch_prop    = prop_male_monarch - prop_female_monarch,
+      avg_accession_age_female_monarch = mean(
+        monarch_age_at_accession[is_monarchy & is_female_monarch], na.rm = TRUE),
+      avg_accession_age_male_monarch = mean(
+        monarch_age_at_accession[is_monarchy & !is_female_monarch], na.rm = TRUE),
+      gap_monarch_accession_age = avg_accession_age_male_monarch - avg_accession_age_female_monarch,
+      .groups = "drop"
+    )
+}
+
+plotMe <- summarise_leadership_gender_gap("year")
+
+democracy_data <- democracy_data |> arrange(country, year)
+democracy_data$to_democracy   <- 0
+democracy_data$from_democracy <- 0
+
+for (i in 2:nrow(democracy_data)) {
+  if (democracy_data$country[i] == democracy_data$country[i - 1]) {
+    current  <- democracy_data$is_democracy[i]
+    previous <- democracy_data$is_democracy[i - 1]
+    if (!is.na(current) && !is.na(previous)) {
+      if (current && !previous)  democracy_data$to_democracy[i]   <- 1
+      if (!current && previous)  democracy_data$from_democracy[i] <- 1
+    }
+  }
+}
+
+summary_data <- democracy_data |>
+  group_by(year) |>
+  summarize(
+    prop_democracy  = mean(is_democracy, na.rm = TRUE),
+    transitions_in  = sum(to_democracy,   na.rm = TRUE),
+    transitions_out = sum(from_democracy, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+democracy_data <- democracy_data |>
+  mutate(ten_yrs = floor(year / 10) * 10)
+
+summary_ten_yrs <- democracy_data |>
+  group_by(ten_yrs) |>
+  summarize(
+    prop_democracy  = mean(is_democracy, na.rm = TRUE),
+    transitions_in  = sum(to_democracy,   na.rm = TRUE),
+    transitions_out = sum(from_democracy, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cor_matrix <- summary_data |>
+  select(prop_democracy, transitions_in, transitions_out) |>
+  cor(use = "complete.obs")
+
+cor_df <- as.data.frame(cor_matrix) |>
+  rownames_to_column("var1") |>
+  pivot_longer(-var1, names_to = "var2", values_to = "correlation")
+
+topn_countries <- function(start_year = 1950, end_year = 2020, num_countries = 10) {
+  if (start_year < 1950 | end_year > 2020 | start_year > end_year)
+    stop("Year range must be between 1950 and 2020")
+
+  data <- democracy_data |>
+    filter(year >= start_year & year <= end_year) |>
+    arrange(country_name, year) |>
+    group_by(country_name) |>
+    mutate(
+      prev_year      = lag(is_democracy),
+      to_democracy   = ifelse(is_democracy == 1 & prev_year == 0, 1, 0),
+      from_democracy = ifelse(is_democracy == 0 & prev_year == 1, 1, 0)
+    ) |>
+    ungroup()
+
+  data |>
+    group_by(country_name) |>
+    summarize(
+      transitions_in    = sum(to_democracy,   na.rm = TRUE),
+      transitions_out   = sum(from_democracy, na.rm = TRUE),
+      total_transitions = transitions_in + transitions_out,
+      .groups = "drop"
+    ) |>
+    arrange(desc(total_transitions)) |>
+    slice_head(n = num_countries)
+}
+```
+
+# Gender Gaps in Leadership And Representation
+
+## Column {width=58%}
+
+::: {.card title="Visualizations"}
+::: {.panel-tabset}
+
+### Women in Parliament
+
+```{r}
+democracy_data |>
+  filter(!is.na(is_democracy), !is.na(prop_in_par)) |>
+  mutate(is_democracy = factor(is_democracy, labels = c("Non-Democracy", "Democracy"))) |>
+  ggplot(aes(x = is_democracy, y = prop_in_par)) +
+  geom_boxplot(
+    fill = c(blue_mid, blue_dark),
+    color = black, outlier.color = black
+  ) +
+  stat_summary(fun = mean, geom = "crossbar", color = black,
+               width = 0.75, linetype = "dotted", linewidth = 0.3) +
+  stat_summary(fun = mean, geom = "text",
+               aes(label = paste0("Mean: ", round(after_stat(y), 1), "%")),
+               vjust = -1, color = "white", size = 3.5) +
+  stat_summary(fun = median, geom = "text",
+               aes(label = paste0("Median: ", round(after_stat(y), 1), "%")),
+               vjust = 1.5, color = "white", size = 3.5) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(x = "Democracy Status", y = "% of Parliament Seats Held by Women") +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(color = blue_dark),
+    axis.text  = element_text(color = blue_dark)
+  )
+```
+
+### Accession Ages Over Time
+
+No female presidents were recorded before 1980, so this plot begins there.
+
+```{r}
+plotMe |>
+  filter(year >= 1980) |>
+  ggplot(aes(x = year)) +
+  geom_ribbon(aes(ymin = avg_accession_age_female_president,
+                  ymax = avg_accession_age_male_president),
+              fill = blue_pale, alpha = 0.8) +
+  geom_ribbon(aes(ymin = avg_accession_age_female_monarch,
+                  ymax = avg_accession_age_male_monarch),
+              fill = pink_pale, alpha = 0.8) +
+  geom_line(aes(y = avg_accession_age_female_president, color = "Female President"), linewidth = 1.4) +
+  geom_line(aes(y = avg_accession_age_male_president,   color = "Male President"),   linewidth = 1.4) +
+  geom_line(aes(y = avg_accession_age_female_monarch,   color = "Female Monarch"),   linewidth = 1.4) +
+  geom_line(aes(y = avg_accession_age_male_monarch,     color = "Male Monarch"),     linewidth = 1.4) +
+  scale_color_manual(
+    name = "Leader Type",
+    values = c("Female President" = pink_accent, "Male President" = blue_dark,
+               "Female Monarch"   = pink_accent, "Male Monarch"   = blue_mid),
+    breaks = c("Female President", "Male President", "Female Monarch", "Male Monarch")
+  ) +
+  scale_x_continuous(limits = c(1980, 2020)) +
+  scale_y_continuous(limits = c(20, 70)) +
+  labs(x = "Year", y = "Average Accession Age", color = "Leader Type") +
+  theme(
+    panel.grid.minor  = element_blank(),
+    legend.position   = "bottom",
+    legend.direction  = "horizontal",
+    legend.background = element_rect(fill = "white", color = blue_light),
+    legend.text       = element_text(size = 9, color = blue_dark),
+    legend.title      = element_text(size = 9, color = blue_dark),
+    axis.title        = element_text(color = blue_dark),
+    axis.text         = element_text(color = blue_dark)
+  )
+```
+
+:::
+:::
+
+## Column {width=42%}
+
+::: {.card title="Tables"}
+::: {.panel-tabset}
+
+### Women in Parliament
+
+```{r}
+result       <- t.test(prop_in_par ~ is_democracy, data = democracy_data)
+table_result <- tidy(result)
+
+table_result |>
+  select(estimate1, estimate2, statistic, p.value, conf.low, conf.high, parameter) |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 1: Welch Two-Sample t-Test**"),
+    subtitle = "Proportion of Parliament Seats Held by Women"
+  ) |>
+  cols_label(
+    estimate1 = md("Mean<br>(Non-Dem.)"),
+    estimate2 = md("Mean<br>(Dem.)"),
+    statistic = md("*t*"),
+    p.value   = md("*p*-value"),
+    conf.low  = "CI Low",
+    conf.high = "CI High",
+    parameter = md("*df*")
+  ) |>
+  fmt_number(columns = c(estimate1, estimate2, statistic, conf.low, conf.high), decimals = 3) |>
+  fmt_number(columns = parameter, decimals = 1) |>
+  fmt_scientific(columns = p.value, decimals = 3) |>
+  tab_style(
+    style     = list(cell_fill(color = pink_pale), cell_text(weight = "bold", color = blue_dark)),
+    locations = cells_body(columns = p.value)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_spanners(), cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_footnote(
+    footnote  = "Highlighted p-value is statistically significant (p < 0.05).",
+    locations = cells_column_labels(columns = p.value)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+The t-test (t = -4.591, p < 0.001) confirms a statistically significant difference in women's parliamentary representation between democratic and non-democratic countries. Democratic countries average **17.7%** versus **16.0%** for non-democracies, with a confidence interval that excludes zero.
+:::
+
+### Accession Ages Over Time
+
+```{r}
+summarise_leadership_gender_gap("is_democracy") |>
+  mutate(is_democracy = ifelse(is_democracy, "Democracy", "Non-Democracy")) |>
+  select(
+    is_democracy,
+    n,
+    avg_accession_age_female_president,
+    avg_accession_age_male_president,
+    gap_president_accession_age,
+    avg_accession_age_female_monarch,
+    avg_accession_age_male_monarch,
+    gap_monarch_accession_age
+  ) |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 2: Gender Gaps in Accession Age**"),
+    subtitle = "Average Age When Leaders First Take Office"
+  ) |>
+  tab_spanner(label = "Presidents",
+    columns = c(avg_accession_age_female_president, avg_accession_age_male_president,
+                gap_president_accession_age)) |>
+  tab_spanner(label = "Monarchs",
+    columns = c(avg_accession_age_female_monarch, avg_accession_age_male_monarch,
+                gap_monarch_accession_age)) |>
+  cols_label(
+    is_democracy                       = "Status",
+    n                                  = "N",
+    avg_accession_age_female_president = "Female",
+    avg_accession_age_male_president   = "Male",
+    gap_president_accession_age        = "Gap (M-F)",
+    avg_accession_age_female_monarch   = "Female",
+    avg_accession_age_male_monarch     = "Male",
+    gap_monarch_accession_age          = "Gap (M-F)"
+  ) |>
+  fmt_number(
+    columns  = c(avg_accession_age_female_president, avg_accession_age_male_president,
+                 gap_president_accession_age, avg_accession_age_female_monarch,
+                 avg_accession_age_male_monarch, gap_monarch_accession_age),
+    decimals = 1
+  ) |>
+  fmt_integer(columns = n) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_spanners(), cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = pink_pale),
+    locations = cells_body(
+      columns = c(gap_president_accession_age, gap_monarch_accession_age),
+      rows    = gap_president_accession_age > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = blue_light),
+    locations = cells_body(
+      columns = c(gap_president_accession_age, gap_monarch_accession_age),
+      rows    = gap_president_accession_age < 0)
+  ) |>
+  tab_footnote(
+    footnote  = "Blue = males higher; pink = females higher.",
+    locations = cells_column_labels(columns = c(gap_president_accession_age, gap_monarch_accession_age))
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+In non-democratic countries, female presidents take office nearly **14 years older** than male presidents on average. In democracies, that gap shrinks to under 3 years. For monarchs, the pattern reverses — female monarchs tend to ascend younger, and the gap has been growing since 2000.
+:::
+
+### Gender Gap by Decade
+
+```{r}
+pal3 <- wes_palette("Moonrise3", n = 4)
+
+summarise_leadership_gender_gap("decade") |>
+  select(decade, n, prop_female_president, prop_male_president, gap_president_prop) |>
+  gt() |>
+  tab_header(title = md("**Table 3: Gender Gaps by Decade**")) |>
+  cols_label(
+    decade                = "Decade",
+    n                     = "Sample Size",
+    prop_female_president = "Prop. Female President",
+    prop_male_president   = "Prop. Male President",
+    gap_president_prop    = "Gap (M - F)"
+  ) |>
+  fmt_percent(
+    columns  = c(prop_female_president, prop_male_president, gap_president_prop),
+    decimals = 1
+  ) |>
+  fmt_integer(columns = n) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pal3[2], "99")),
+    locations = cells_body(columns = gap_president_prop, rows = gap_president_prop > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pal3[3], "99")),
+    locations = cells_body(columns = gap_president_prop, rows = gap_president_prop < 0)
+  ) |>
+  tab_footnote(
+    footnote  = "Positive gap means more male than female presidents. Gap narrows across decades.",
+    locations = cells_column_labels(columns = gap_president_prop)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+:::
+:::
+
+# Democratic Transitions
+
+## Column {width=58%}
+
+::: {.card title="Visualizations"}
+::: {.panel-tabset}
+
+### Proportion of Democracies Over Time
+
+```{r}
+ggplot(summary_data, aes(x = year, y = prop_democracy)) +
+  geom_point(color = blue_dark, size = 2) +
+  geom_line(color = blue_dark, linewidth = 0.75) +
+  scale_y_continuous(
+    breaks = seq(0, 1, 0.2),
+    limits = c(0, 1),
+    labels = scales::percent_format()
+  ) +
+  scale_x_continuous(breaks = seq(1950, 2020, 10)) +
+  labs(x = "Year", y = "Percentage of Democratic Countries") +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(color = blue_dark),
+    axis.text  = element_text(color = blue_dark)
+  )
+```
+
+### Transitions Over Time
+
+```{r}
+summary_data_long <- summary_data |>
+  pivot_longer(
+    cols      = c(transitions_in, transitions_out),
+    names_to  = "type",
+    values_to = "count"
+  ) |>
+  mutate(
+    type = factor(
+      type,
+      levels = c("transitions_in", "transitions_out"),
+      labels = c("Transitions In", "Transitions Out")
+    )
+  )
+
+ggplot(summary_data_long, aes(x = year, y = count, fill = type)) +
+  geom_area(alpha = 0.6, position = "identity") +
+  scale_fill_manual(
+    values = c("Transitions In" = blue_mid, "Transitions Out" = pink_accent),
+    name   = "Transition Direction"
+  ) +
+  scale_y_continuous(limits = c(0, 12), breaks = seq(0, 12, 2)) +
+  scale_x_continuous(limits = c(1950, 2020), breaks = seq(1950, 2020, 10)) +
+  labs(x = "Year", y = "Count of Countries") +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position  = "bottom",
+    axis.title       = element_text(color = blue_dark),
+    axis.text        = element_text(color = blue_dark),
+    legend.text      = element_text(color = blue_dark),
+    legend.title     = element_text(color = blue_dark)
+  )
+```
+
+### Correlation Heatmap
+
+```{r}
+cor_df_plot <- cor_df |>
+  mutate(
+    var1 = recode(var1,
+      "prop_democracy"  = "Prop. Democratic",
+      "transitions_in"  = "Transitions In",
+      "transitions_out" = "Transitions Out"),
+    var2 = recode(var2,
+      "prop_democracy"  = "Prop. Democratic",
+      "transitions_in"  = "Transitions In",
+      "transitions_out" = "Transitions Out")
+  )
+
+ggplot(cor_df_plot, aes(x = var1, y = var2, fill = correlation)) +
+  geom_tile(color = "white", linewidth = 1.2) +
+  geom_text(
+    aes(label = ifelse(var1 == var2, "1.00
+(self)", round(correlation, 2))),
+    size = 4.5, fontface = "bold", color = black
+  ) +
+  scale_fill_gradient2(
+    low      = pink_accent,
+    mid      = blue_pale,
+    high     = blue_dark,
+    midpoint = 0,
+    limits   = c(-1, 1),
+    name     = "Correlation"
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(
+    axis.text    = element_text(size = 12, color = black, face = "bold"),
+    panel.grid   = element_blank(),
+    legend.text  = element_text(color = black),
+    legend.title = element_text(color = black)
+  )
+```
+
+:::
+:::
+
+## Column {width=42%}
+
+::: {.card title="Tables"}
+::: {.panel-tabset}
+
+### Annual Transitions
+
+```{r}
+summary_data |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 4: Democracy Transitions by Year**"),
+    subtitle = "Proportion of Democracies and Transitions In and Out"
+  ) |>
+  cols_label(
+    year            = "Year",
+    prop_democracy  = "Prop. Democratic",
+    transitions_in  = "Transitions In",
+    transitions_out = "Transitions Out"
+  ) |>
+  fmt_percent(columns = prop_democracy, decimals = 1) |>
+  fmt_integer(columns = c(transitions_in, transitions_out)) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(blue_mid, "99")),
+    locations = cells_body(columns = transitions_in,  rows = transitions_in > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pink_accent, "99")),
+    locations = cells_body(columns = transitions_out, rows = transitions_out > 0)
+  ) |>
+  tab_footnote(
+    footnote  = "Blue = transitions into democracy; pink = transitions out of democracy.",
+    locations = cells_column_labels(columns = transitions_in)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+Transitions into democracy peaked sharply in the early 1990s following the end of the Cold War, while transitions out have persisted throughout every decade. Year-to-year fluctuations in transitions do not closely track the overall global proportion of democracies.
+:::
+
+### By Decade
+
+```{r}
+summary_ten_yrs |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 5: Democracy Transitions by Decade**"),
+    subtitle = "Aggregated Transitions and Proportion Democratic"
+  ) |>
+  cols_label(
+    ten_yrs         = "Decade Start",
+    prop_democracy  = "Prop. Democratic",
+    transitions_in  = "Transitions In",
+    transitions_out = "Transitions Out"
+  ) |>
+  fmt_percent(columns = prop_democracy, decimals = 1) |>
+  fmt_integer(columns = c(ten_yrs, transitions_in, transitions_out)) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(blue_mid, "99")),
+    locations = cells_body(columns = transitions_in,  rows = transitions_in > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pink_accent, "99")),
+    locations = cells_body(columns = transitions_out, rows = transitions_out > 0)
+  ) |>
+  tab_footnote(
+    footnote  = "Blue = transitions into democracy; pink = transitions out. The 1990s saw the largest wave of democratization.",
+    locations = cells_column_labels(columns = transitions_in)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+The 1990s stand out as the most transformative decade, with 39 transitions into democracy and only 11 out, reflecting the post-Cold War wave. The 1970s were the most stagnant period, with transitions in and out nearly balanced and virtually no net change in the global proportion.
+:::
+
+### Top Countries (1950–2020)
+
+```{r}
+topn_countries(1950, 2020, 10) |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 6: Top 10 Countries by Democratic Transitions**"),
+    subtitle = "Total Transitions Into and Out of Democracy, 1950–2020"
+  ) |>
+  cols_label(
+    country_name      = "Country",
+    transitions_in    = "Transitions In",
+    transitions_out   = "Transitions Out",
+    total_transitions = "Total Transitions"
+  ) |>
+  fmt_integer(columns = c(transitions_in, transitions_out, total_transitions)) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(blue_mid, "99")),
+    locations = cells_body(columns = transitions_in,  rows = transitions_in > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pink_accent, "99")),
+    locations = cells_body(columns = transitions_out, rows = transitions_out > 0)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+Argentina and Thailand experienced the most democratic transitions between 1950 and 2020, followed by Ghana, Pakistan, and Peru. Repeated regime shifts reflect political instability — democratization is not a steady or linear process.
+:::
+
+### Top Countries (1980–2010)
+
+```{r}
+topn_countries(1980, 2010, 10) |>
+  gt() |>
+  tab_header(
+    title    = md("**Table 7: Top 10 Countries by Democratic Transitions**"),
+    subtitle = "Total Transitions Into and Out of Democracy, 1980–2010"
+  ) |>
+  cols_label(
+    country_name      = "Country",
+    transitions_in    = "Transitions In",
+    transitions_out   = "Transitions Out",
+    total_transitions = "Total Transitions"
+  ) |>
+  fmt_integer(columns = c(transitions_in, transitions_out, total_transitions)) |>
+  tab_style(
+    style     = cell_fill(color = blue_pale),
+    locations = list(cells_column_labels(), cells_title())
+  ) |>
+  tab_style(
+    style     = cell_text(color = blue_dark),
+    locations = list(cells_column_labels(), cells_title(), cells_body())
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(blue_mid, "99")),
+    locations = cells_body(columns = transitions_in,  rows = transitions_in > 0)
+  ) |>
+  tab_style(
+    style     = cell_fill(color = paste0(pink_accent, "99")),
+    locations = cells_body(columns = transitions_out, rows = transitions_out > 0)
+  ) |>
+  tab_options(
+    table.font.size                = px(13),
+    data_row.padding               = px(5),
+    table.background.color         = "white",
+    column_labels.background.color = blue_pale
+  ) |>
+  opt_table_font(font = google_font("Source Serif 4"))
+```
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+Even four or fewer transitions per country can indicate meaningful political instability. A key takeaway is that democratization requires not only becoming democratic, but sustaining democratic rule over time.
+:::
+
+:::
+:::
+# Conclusion
+
+::: {.card style="background-color: #f7fbff; border: 1px solid #bdd4e7; padding: 1rem; margin-top: 1rem;"}
+Overall, our analysis shows that democracy is related to gender representation and political stability, but not always in simple ways. Democratic countries had slightly higher average proportions of women in parliament than non-democratic countries, and the t-test showed that this difference was statistically significant. However, the actual difference in means was fairly small, suggesting that democracy alone does not guarantee equal representation. Female presidents became more common over time, but male presidents still made up the large majority of presidential leaders across every decade. Accession-age gaps were smaller and more stable among presidents, while monarchs showed larger differences by gender.
+
+Our analysis of democratic transitions also showed that global democratization has been unpredictable. The percentage of democratic countries increased substantially from 1950 to 2020, especially around the late 1980s and early 1990s, but this growth was not steady. Countries continued to move both into and out of democracy over time, showing that democratization includes both progress and reversal. The country-level transition tables suggest that even a small number of regime changes can reflect meaningful political instability.
+
+Taken together, these findings show that becoming a democratic country can be associated with greater gender representation and broader political change, but maintaining democratic rule and achieving gender equality remain ongoing challenges. Democracy may create more opportunities for representation, but the persistence of gender gaps and repeated regime transitions show that political progress is not automatic or permanent.
+:::
+
+
